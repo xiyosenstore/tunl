@@ -3,6 +3,8 @@ pub mod hash;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use worker::*;
+use md5::Md5;
+use sha2::Sha256;
 
 pub const KDFSALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_KEY: &[u8] =
     b"VMess Header AEAD Key_Length";
@@ -19,6 +21,7 @@ pub const KDFSALT_CONST_AEAD_RESP_HEADER_IV: &[u8] = b"AEAD Resp Header IV";
 macro_rules! md5 {
     ( $($v:expr),+ ) => {
         {
+            use md5::Md5;
             let mut hash = Md5::new();
             $(
                 hash.update($v);
@@ -32,6 +35,7 @@ macro_rules! md5 {
 macro_rules! sha256 {
     ( $($v:expr),+ ) => {
         {
+            use sha2::Sha256;
             let mut hash = Sha256::new();
             $(
                 hash.update($v);
@@ -75,4 +79,10 @@ pub async fn parse_addr<R: AsyncRead + std::marker::Unpin>(buf: &mut R) -> Resul
     };
 
     Ok(addr)
+}
+
+pub async fn parse_port<R: AsyncRead + std::marker::Unpin>(buf: &mut R) -> Result<u16> {
+    let mut port = [0u8; 2];
+    buf.read_exact(&mut port).await?;
+    Ok(u16::from_be_bytes(port))
 }
