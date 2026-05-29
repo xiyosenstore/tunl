@@ -24,17 +24,17 @@
     {
       "type": "vmess",
       "tag": "proxy-b",
-      "server": "tunl.benxx.workers.dev",           // ganti domain worker kamu
-      "server_port": 443,                     // port worker (HTTPS)
-      "uuid": "2bcfbfba-b446-4ad5-93ad-72af9e008f61", // UUID dari worker
-      "security": "auto",                     // atau "zero"
+      "server": "tunl.benxx.workers.dev",          
+      "server_port": 443,                     
+      "uuid": "2bcfbfba-b446-4ad5-93ad-72af9e008f61", 
+      "security": "auto",                     
       "tls": {
         "enabled": true,
-        "server_name": "tunl.benxx.workers.dev"     // SNI (bisa custom)
+        "server_name": "tunl.benxx.workers.dev"     
       },
       "transport": {
         "type": "ws",
-        "path": "/36.95.152.58-12137",        // ganti dengan IP-PORT proxy target
+        "path": "/36.95.152.58-12137",        
         "headers": {
           "Host": "tunl.benxx.workers.dev"
         }
