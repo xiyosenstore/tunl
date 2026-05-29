@@ -24,6 +24,10 @@ use pin_project_lite::pin_project;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use worker::*;
 
+// 🔥 PERBAIKAN: import trait Digest untuk Sha256 dan Md5
+use sha2::Digest;   // untuk Sha256::new()
+use md5::Digest as _; // untuk Md5::new() (cukup di macro saja, tidak perlu dipakai langsung)
+
 pin_project! {
     pub struct VmessStream<'a> {
         pub config: Config,
@@ -158,6 +162,8 @@ impl<'a> VmessStream<'a> {
         let remote_port = parse_port(&mut buf).await?;
         let remote_addr = parse_addr(&mut buf).await?;
 
+        console_log!("VMess target: {}:{} [tcp={}]", remote_addr, remote_port, is_tcp);
+
         let key = &crate::sha256!(&key)[..16];
         let iv = &crate::sha256!(&iv)[..16];
 
@@ -185,9 +191,11 @@ impl<'a> VmessStream<'a> {
             ];
             let mut success = false;
             for (target_addr, target_port) in addr_pool {
-                if self.handle_tcp_outbound(target_addr, target_port).await.is_ok() {
+                if let Ok(_) = self.handle_tcp_outbound(target_addr, target_port).await {
                     success = true;
                     break;
+                } else {
+                    console_log!("Fallback: failed to connect to {}:{}", target_addr, target_port);
                 }
             }
             if !success {
