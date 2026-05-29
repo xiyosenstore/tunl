@@ -4,10 +4,7 @@ use reqwest::Client;
 
 pub async fn doh(req_wireformat: &[u8]) -> Result<Vec<u8>> {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("application/dns-message"),
-    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/dns-message"));
     headers.insert(ACCEPT, HeaderValue::from_static("application/dns-message"));
     let client = Client::new();
     let response = client
@@ -18,6 +15,5 @@ pub async fn doh(req_wireformat: &[u8]) -> Result<Vec<u8>> {
         .await?
         .bytes()
         .await?;
-
     Ok(response.to_vec())
 }
