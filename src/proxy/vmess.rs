@@ -45,7 +45,6 @@ impl<'a> VmessStream<'a> {
         }
     }
 
-    // ---------- helper untuk TCP outbound ----------
     async fn handle_tcp_outbound(&mut self, addr: String, port: u16) -> Result<()> {
         let mut remote_socket = Socket::builder().connect(&addr, port)
             .map_err(|e| Error::RustError(e.to_string()))?;
@@ -66,7 +65,6 @@ impl<'a> VmessStream<'a> {
         Ok(())
     }
 
-    // ---------- AEAD decryption ----------
     async fn aead_decrypt(&mut self) -> Result<Vec<u8>> {
         let key = crate::md5!(
             &self.config.uuid.as_bytes(),
@@ -138,7 +136,6 @@ impl<'a> VmessStream<'a> {
         Ok(header_payload)
     }
 
-    // ---------- proses utama ----------
     pub async fn process(&mut self) -> Result<()> {
         let mut buf = Cursor::new(self.aead_decrypt().await?);
 
@@ -161,9 +158,6 @@ impl<'a> VmessStream<'a> {
         let remote_port = parse_port(&mut buf).await?;
         let remote_addr = parse_addr(&mut buf).await?;
 
-        console_log!("VMess target: {}:{} [tcp={}]", remote_addr, remote_port, is_tcp);
-
-        // encrypt payload (response header)
         let key = &crate::sha256!(&key)[..16];
         let iv = &crate::sha256!(&iv)[..16];
 
@@ -185,18 +179,15 @@ impl<'a> VmessStream<'a> {
         self.write(&header).await?;
 
         if is_tcp {
-            // coba remote_addr terlebih dahulu, jika gagal fallback ke proxy dari path
             let addr_pool = [
                 (remote_addr.clone(), remote_port),
                 (self.config.proxy_addr.clone(), self.config.proxy_port),
             ];
             let mut success = false;
             for (target_addr, target_port) in addr_pool {
-                if let Ok(_) = self.handle_tcp_outbound(target_addr, target_port).await {
+                if self.handle_tcp_outbound(target_addr, target_port).await.is_ok() {
                     success = true;
                     break;
-                } else {
-                    console_log!("Fallback: failed to connect to {}:{}", target_addr, target_port);
                 }
             }
             if !success {
@@ -209,7 +200,6 @@ impl<'a> VmessStream<'a> {
     }
 }
 
-// Implementasi AsyncRead dan AsyncWrite sama seperti sebelumnya
 impl<'a> AsyncRead for VmessStream<'a> {
     fn poll_read(
         self: Pin<&mut Self>,
