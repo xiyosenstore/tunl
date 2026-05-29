@@ -3,7 +3,7 @@ mod config;
 mod proxy;
 
 use crate::config::Config;
-use crate::proxy::VmessStream;   
+use crate::proxy::VmessStream;
 
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use serde_json::json;
@@ -110,19 +110,22 @@ async fn link_handler(req: Request, cx: RouteContext<Config>, default_sni: &str)
     let host = cx.data.host.clone();
     let uuid = cx.data.uuid.to_string();
 
+    
+    let path = format!("/{}", proxy.replace(':', "-"));
+
     let vmess_config = json!({
         "v": "2",
         "ps": "tunl",
-        "add": addr,
-        "port": port,
+        "add": host,                   
+        "port": 443,                   
         "id": uuid,
         "aid": "0",
         "scy": "auto",
         "net": "ws",
         "type": "none",
         "host": host,
-        "path": "/",
-        "tls": if use_tls { "tls" } else { "" },
+        "path": path,
+        "tls": "tls",                   
         "sni": sni,
         "alpn": ""
     });
