@@ -3,7 +3,7 @@ mod config;
 mod proxy;
 
 use crate::config::Config;
-use crate::proxy::*;
+use crate::proxy::VmessStream;   
 
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use serde_json::json;
@@ -12,10 +12,8 @@ use worker::*;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-/// Regex untuk menangkap IP dan port, baik dipisah titik dua (:) maupun tanda hubung (-)
 static PROXYIP_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})[:|-](\d{1,5})$").unwrap());
 
-/// Ambil daftar proxy dari URL raw GitHub (format CSV: ip,port,country,provider)
 async fn fetch_proxy_list(url: &str) -> Result<Vec<String>> {
     let req = Fetch::Url(Url::parse(url)?);
     let mut res = req.send().await?;
@@ -31,7 +29,7 @@ async fn fetch_proxy_list(url: &str) -> Result<Vec<String>> {
                 let ip = parts[0].trim();
                 let port = parts[1].trim();
                 if !ip.is_empty() && !port.is_empty() {
-                    Some(format!("{}:{}", ip, port))   // simpan sebagai IP:PORT internal
+                    Some(format!("{}:{}", ip, port))
                 } else {
                     None
                 }
@@ -60,10 +58,10 @@ async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
 
     let config = Config {
         uuid,
+        host: host.clone(),
+        proxy_list_url,
         proxy_addr: host.clone(),
         proxy_port: 443,
-        proxy_list_url,
-        host,
     };
 
     Router::with_data(config)
@@ -78,7 +76,6 @@ async fn welcome() -> Result<Response> {
     Response::from_html("<h1>tunl Worker Active</h1><p>Use /link to get config or /IP:PORT (or IP-PORT) for WebSocket tunnel</p>")
 }
 
-/// Handler untuk endpoint /link
 async fn link_handler(req: Request, cx: RouteContext<Config>, default_sni: &str) -> Result<Response> {
     let url = req.url()?;
     let query_sni = url
@@ -106,7 +103,6 @@ async fn link_handler(req: Request, cx: RouteContext<Config>, default_sni: &str)
         proxy_list[idx].clone()
     };
 
-    // Ekstrak IP dan port (proxy disimpan sebagai IP:PORT)
     let (addr, port_str) = proxy.split_once(':').unwrap();
     let port: u16 = port_str.parse().unwrap_or(443);
     let use_tls = port == 443;
@@ -141,11 +137,9 @@ async fn link_handler(req: Request, cx: RouteContext<Config>, default_sni: &str)
     Response::from_json(&response)
 }
 
-/// Handler untuk tunnel WebSocket ke proxy tujuan (format /IP:PORT atau /IP-PORT)
 async fn tunnel_handler(req: Request, mut cx: RouteContext<Config>) -> Result<Response> {
     let proxy_param = cx.param("proxyip").unwrap().to_string();
 
-    // Coba cocokkan dengan regex (menerima : atau -)
     let captures = PROXYIP_PATTERN.captures(&proxy_param).ok_or_else(|| Error::from("Invalid proxy format. Use /IP:PORT or /IP-PORT"))?;
     let addr = captures.get(1).unwrap().as_str().to_string();
     let port: u16 = captures.get(2).unwrap().as_str().parse().map_err(|_| Error::from("Invalid port number"))?;
@@ -159,7 +153,7 @@ async fn tunnel_handler(req: Request, mut cx: RouteContext<Config>) -> Result<Re
         server.accept()?;
         wasm_bindgen_futures::spawn_local(async move {
             let events = server.events().unwrap();
-            if let Err(e) = ProxyStream::new(cx.data, &server, events).process().await {
+            if let Err(e) = VmessStream::new(cx.data, &server, events).process().await {
                 console_error!("[tunnel]: {}", e);
             }
         });
