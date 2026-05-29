@@ -6,7 +6,7 @@ use crate::common::{
     KDFSALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_KEY,
 };
 use crate::config::Config;
-use crate::proxy::dns;   
+use crate::proxy::dns;
 
 use std::io::Cursor;
 use std::pin::Pin;
@@ -178,9 +178,8 @@ impl<'a> VmessStream<'a> {
             let mut buff = vec![0u8; 65535];
             let n = self.read(&mut buff).await?;
             let data = &buff[..n];
-            // Perbaikan: gunakan dns::doh setelah import
             if dns::doh(data).await.is_ok() {
-                self.write(&data).await?;
+                self.write(data).await?;
             }
         }
 
@@ -204,7 +203,7 @@ impl<'a> AsyncRead for VmessStream<'a> {
             match this.events.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(WebsocketEvent::Message(msg)))) => {
                     if let Some(data) = msg.bytes() {
-                        this.buffer.put_slice(data);
+                        this.buffer.put_slice(&data); // <-- PERBAIKAN: tambahkan &
                     }
                 }
                 Poll::Pending => return Poll::Pending,
