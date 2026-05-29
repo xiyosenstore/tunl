@@ -1,5 +1,6 @@
 use crate::common::{
-    hash, KDFSALT_CONST_AEAD_RESP_HEADER_IV, KDFSALT_CONST_AEAD_RESP_HEADER_KEY,
+    hash, parse_addr, parse_port,
+    KDFSALT_CONST_AEAD_RESP_HEADER_IV, KDFSALT_CONST_AEAD_RESP_HEADER_KEY,
     KDFSALT_CONST_AEAD_RESP_HEADER_LEN_IV, KDFSALT_CONST_AEAD_RESP_HEADER_LEN_KEY,
     KDFSALT_CONST_VMESS_HEADER_PAYLOAD_AEAD_IV, KDFSALT_CONST_VMESS_HEADER_PAYLOAD_AEAD_KEY,
     KDFSALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_IV,
@@ -17,9 +18,6 @@ use aes_gcm::{
     aead::{Aead, Payload},
     Aes128Gcm,
 };
-use md5::{Digest, Md5};
-use sha2::Sha256;
-
 use bytes::{BufMut, BytesMut};
 use futures_util::Stream;
 use pin_project_lite::pin_project;
@@ -47,6 +45,28 @@ impl<'a> VmessStream<'a> {
         }
     }
 
+    // ---------- helper untuk TCP outbound ----------
+    async fn handle_tcp_outbound(&mut self, addr: String, port: u16) -> Result<()> {
+        let mut remote_socket = Socket::builder().connect(&addr, port)
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        remote_socket.opened().await
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        tokio::io::copy_bidirectional(self, &mut remote_socket).await
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn handle_udp_outbound(&mut self) -> Result<()> {
+        let mut buff = vec![0u8; 65535];
+        let n = self.read(&mut buff).await?;
+        let data = &buff[..n];
+        if dns::doh(data).await.is_ok() {
+            self.write(data).await?;
+        }
+        Ok(())
+    }
+
+    // ---------- AEAD decryption ----------
     async fn aead_decrypt(&mut self) -> Result<Vec<u8>> {
         let key = crate::md5!(
             &self.config.uuid.as_bytes(),
@@ -86,7 +106,6 @@ impl<'a> VmessStream<'a> {
             let len = Aes128Gcm::new(header_length_key.into())
                 .decrypt(header_length_nonce.into(), payload)
                 .map_err(|e| Error::RustError(e.to_string()))?;
-
             ((len[0] as u16) << 8) | (len[1] as u16)
         };
 
@@ -116,10 +135,10 @@ impl<'a> VmessStream<'a> {
                 .decrypt(payload_nonce.into(), payload)
                 .map_err(|e| Error::RustError(e.to_string()))?
         };
-
         Ok(header_payload)
     }
 
+    // ---------- proses utama ----------
     pub async fn process(&mut self) -> Result<()> {
         let mut buf = Cursor::new(self.aead_decrypt().await?);
 
@@ -139,15 +158,12 @@ impl<'a> VmessStream<'a> {
         let cmd = buf.read_u8().await?;
         let is_tcp = cmd == 0x1;
 
-        let port = {
-            let mut port = [0u8; 2];
-            buf.read_exact(&mut port).await?;
-            ((port[0] as u16) << 8) | (port[1] as u16)
-        };
-        let addr = crate::common::parse_addr(&mut buf).await?;
+        let remote_port = parse_port(&mut buf).await?;
+        let remote_addr = parse_addr(&mut buf).await?;
 
-        console_log!("connecting to upstream {}:{} [is_tcp={is_tcp}]", addr, port);
+        console_log!("VMess target: {}:{} [tcp={}]", remote_addr, remote_port, is_tcp);
 
+        // encrypt payload (response header)
         let key = &crate::sha256!(&key)[..16];
         let iv = &crate::sha256!(&iv)[..16];
 
@@ -161,10 +177,7 @@ impl<'a> VmessStream<'a> {
         let payload_key = &hash::kdf(&key, &[KDFSALT_CONST_AEAD_RESP_HEADER_KEY])[..16];
         let payload_iv = &hash::kdf(&iv, &[KDFSALT_CONST_AEAD_RESP_HEADER_IV])[..12];
         let header = {
-            let header = [
-                options[0],
-                0x00, 0x00, 0x00,
-            ];
+            let header = [options[0], 0x00, 0x00, 0x00];
             Aes128Gcm::new(payload_key.into())
                 .encrypt(payload_iv.into(), &header[..])
                 .map_err(|e| Error::RustError(e.to_string()))?
@@ -172,21 +185,31 @@ impl<'a> VmessStream<'a> {
         self.write(&header).await?;
 
         if is_tcp {
-            let mut upstream = Socket::builder().connect(addr, port)?;
-            tokio::io::copy_bidirectional(self, &mut upstream).await?;
-        } else {
-            let mut buff = vec![0u8; 65535];
-            let n = self.read(&mut buff).await?;
-            let data = &buff[..n];
-            if dns::doh(data).await.is_ok() {
-                self.write(data).await?;
+            // coba remote_addr terlebih dahulu, jika gagal fallback ke proxy dari path
+            let addr_pool = [
+                (remote_addr.clone(), remote_port),
+                (self.config.proxy_addr.clone(), self.config.proxy_port),
+            ];
+            let mut success = false;
+            for (target_addr, target_port) in addr_pool {
+                if let Ok(_) = self.handle_tcp_outbound(target_addr, target_port).await {
+                    success = true;
+                    break;
+                } else {
+                    console_log!("Fallback: failed to connect to {}:{}", target_addr, target_port);
+                }
             }
+            if !success {
+                return Err(Error::RustError("No available upstream".to_string()));
+            }
+        } else {
+            self.handle_udp_outbound().await?;
         }
-
         Ok(())
     }
 }
 
+// Implementasi AsyncRead dan AsyncWrite sama seperti sebelumnya
 impl<'a> AsyncRead for VmessStream<'a> {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -203,7 +226,7 @@ impl<'a> AsyncRead for VmessStream<'a> {
             match this.events.as_mut().poll_next(cx) {
                 Poll::Ready(Some(Ok(WebsocketEvent::Message(msg)))) => {
                     if let Some(data) = msg.bytes() {
-                        this.buffer.put_slice(&data); // <-- PERBAIKAN: tambahkan &
+                        this.buffer.put_slice(&data);
                     }
                 }
                 Poll::Pending => return Poll::Pending,
@@ -226,11 +249,9 @@ impl<'a> AsyncWrite for VmessStream<'a> {
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
         )
     }
-
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<tokio::io::Result<()>> {
         Poll::Ready(Ok(()))
     }
-
     fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<tokio::io::Result<()>> {
         Poll::Ready(Ok(()))
     }
