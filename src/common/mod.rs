@@ -3,11 +3,11 @@ pub mod hash;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use worker::*;
-// Import trait Digest untuk Md5 dan Sha256
-use md5::Digest;      // untuk Md5::new()
-use sha2::Digest;     // untuk Sha256::new()
+use md5::Md5;
+use sha2::Sha256;
+use md5::Digest;     // cukup satu Digest trait (dari md5 atau sha2)
 
-// Ekspor konstanta yang diperlukan (salin dari kode Siren asli, pastikan ada)
+// Konstanta yang diperlukan
 pub const KDFSALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_KEY: &[u8] =
     b"VMess Header AEAD Key_Length";
 pub const KDFSALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_IV: &[u8] =
