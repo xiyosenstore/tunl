@@ -1,39 +1,48 @@
 {
-    "log": {
-        "loglevel": "info"
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "tag": "dns-out",
+        "address": "https://8.8.8.8/dns-query"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "listen_port": 10808,
+      "type": "socks",
+      "tag": "socks-in",
+      "set_system_proxy": true
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vmess",
+      "tag": "proxy-b",
+      "server": "tunl.benxx.workers.dev",           // ganti domain worker kamu
+      "server_port": 443,                     // port worker (HTTPS)
+      "uuid": "2bcfbfba-b446-4ad5-93ad-72af9e008f61", // UUID dari worker
+      "security": "auto",                     // atau "zero"
+      "tls": {
+        "enabled": true,
+        "server_name": "tunl.benxx.workers.dev"     // SNI (bisa custom)
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/36.95.152.58-12137",        // ganti dengan IP-PORT proxy target
+        "headers": {
+          "Host": "tunl.benxx.workers.dev"
+        }
+      }
     },
-    "inbounds": [
-        {
-            "port": 1085,
-            "listen": "127.0.0.1",
-            "protocol": "socks",
-            "settings": {
-                "udp": true
-            }
-        }
-    ],
-    "outbounds": [
-        {
-            "protocol": "vmess",
-            "settings": {
-                "vnext": [
-                    {
-                        "address": "localhost",
-                        "port": 8787,
-                        "users": [
-                            {
-                                "id": "0fbf4f81-2598-4b6a-a623-0ead4cb9efa8",
-                                "security": "zero"
-                            }
-                        ]
-                    }
-                ]
-            },
-            "streamSettings": {
-                "network": "ws",
-                "wsSettings" : {
-                }
-            }
-        }
-    ] 
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
 }
