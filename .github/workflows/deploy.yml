@@ -2,8 +2,8 @@ name: Deploy Worker
 
 on:
   push:
-    branches: [ master ]   # atau 'main' sesuai branch utama Anda
-  workflow_dispatch:       # agar bisa dijalankan manual dari tab Actions
+    branches: [ main ]   
+  workflow_dispatch:       
 
 jobs:
   deploy:
