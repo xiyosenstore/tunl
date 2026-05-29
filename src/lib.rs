@@ -103,21 +103,20 @@ async fn link_handler(req: Request, cx: RouteContext<Config>, default_sni: &str)
         proxy_list[idx].clone()
     };
 
-    let (addr, port_str) = proxy.split_once(':').unwrap();
+    let (_addr, port_str) = proxy.split_once(':').unwrap();   // <-- fixed: addr → _addr
     let port: u16 = port_str.parse().unwrap_or(443);
-    let use_tls = port == 443;
+    let _use_tls = port == 443;                              // <-- fixed: use_tls → _use_tls
 
     let host = cx.data.host.clone();
     let uuid = cx.data.uuid.to_string();
 
-    
     let path = format!("/{}", proxy.replace(':', "-"));
 
     let vmess_config = json!({
         "v": "2",
         "ps": "tunl",
-        "add": host,                   
-        "port": 443,                   
+        "add": host,
+        "port": 443,
         "id": uuid,
         "aid": "0",
         "scy": "auto",
@@ -125,7 +124,7 @@ async fn link_handler(req: Request, cx: RouteContext<Config>, default_sni: &str)
         "type": "none",
         "host": host,
         "path": path,
-        "tls": "tls",                   
+        "tls": "tls",
         "sni": sni,
         "alpn": ""
     });
