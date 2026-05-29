@@ -3,9 +3,11 @@ pub mod hash;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use worker::*;
-use md5::Md5;
-use sha2::Sha256;
+// Import trait Digest untuk Md5 dan Sha256
+use md5::Digest;      // untuk Md5::new()
+use sha2::Digest;     // untuk Sha256::new()
 
+// Ekspor konstanta yang diperlukan (salin dari kode Siren asli, pastikan ada)
 pub const KDFSALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_KEY: &[u8] =
     b"VMess Header AEAD Key_Length";
 pub const KDFSALT_CONST_VMESS_HEADER_PAYLOAD_LENGTH_AEAD_IV: &[u8] =
@@ -21,7 +23,6 @@ pub const KDFSALT_CONST_AEAD_RESP_HEADER_IV: &[u8] = b"AEAD Resp Header IV";
 macro_rules! md5 {
     ( $($v:expr),+ ) => {
         {
-            use md5::Md5;
             let mut hash = Md5::new();
             $(
                 hash.update($v);
@@ -35,7 +36,6 @@ macro_rules! md5 {
 macro_rules! sha256 {
     ( $($v:expr),+ ) => {
         {
-            use sha2::Sha256;
             let mut hash = Sha256::new();
             $(
                 hash.update($v);
@@ -46,39 +46,36 @@ macro_rules! sha256 {
 }
 
 pub async fn parse_addr<R: AsyncRead + std::marker::Unpin>(buf: &mut R) -> Result<String> {
-    let addr = match buf.read_u8().await? {
+    let addr_type = buf.read_u8().await?;
+    match addr_type {
         1 => {
             let mut addr = [0u8; 4];
             buf.read_exact(&mut addr).await?;
-            Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3]).to_string()
+            Ok(Ipv4Addr::new(addr[0], addr[1], addr[2], addr[3]).to_string())
         }
         2 => {
             let len = buf.read_u8().await?;
-            let mut domain = vec![0u8; len as _];
+            let mut domain = vec![0u8; len as usize];
             buf.read_exact(&mut domain).await?;
-            String::from_utf8_lossy(&domain).to_string()
+            Ok(String::from_utf8_lossy(&domain).to_string())
         }
         3 => {
             let mut addr = [0u8; 16];
             buf.read_exact(&mut addr).await?;
-            Ipv6Addr::new(
-                ((addr[0] as u16) << 16) | (addr[1] as u16),
-                ((addr[2] as u16) << 16) | (addr[3] as u16),
-                ((addr[4] as u16) << 16) | (addr[5] as u16),
-                ((addr[6] as u16) << 16) | (addr[7] as u16),
-                ((addr[8] as u16) << 16) | (addr[9] as u16),
-                ((addr[10] as u16) << 16) | (addr[11] as u16),
-                ((addr[12] as u16) << 16) | (addr[13] as u16),
-                ((addr[14] as u16) << 16) | (addr[15] as u16),
-            )
-            .to_string()
+            let ip = Ipv6Addr::new(
+                u16::from_be_bytes([addr[0], addr[1]]),
+                u16::from_be_bytes([addr[2], addr[3]]),
+                u16::from_be_bytes([addr[4], addr[5]]),
+                u16::from_be_bytes([addr[6], addr[7]]),
+                u16::from_be_bytes([addr[8], addr[9]]),
+                u16::from_be_bytes([addr[10], addr[11]]),
+                u16::from_be_bytes([addr[12], addr[13]]),
+                u16::from_be_bytes([addr[14], addr[15]]),
+            );
+            Ok(ip.to_string())
         }
-        _ => {
-            return Err(Error::RustError("invalid address".to_string()));
-        }
-    };
-
-    Ok(addr)
+        _ => Err(Error::RustError("invalid address type".to_string())),
+    }
 }
 
 pub async fn parse_port<R: AsyncRead + std::marker::Unpin>(buf: &mut R) -> Result<u16> {
